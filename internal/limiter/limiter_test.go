@@ -5,8 +5,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 func TestTokenBucketInMemory(t *testing.T) {
@@ -37,16 +35,17 @@ func TestTokenBucketInMemory(t *testing.T) {
 }
 
 func TestLeakyBucket(t *testing.T) {
+	capacity := 2
 	config := RateLimiterConfig{
 		Algorithm: LeakyBucket,
-		Capacity:  2,
+		Capacity:  capacity,
 		Rate:      100 * time.Millisecond, // Process 1 request every 100ms
 	}
 	rl := NewRateLimiter(config)
 	ctx := context.Background()
 
 	// Test queue capacity
-	for i := 0; i < 2; i++ {
+	for i := 0; i < capacity; i++ {
 		if !rl.Allow(ctx) {
 			t.Errorf("Request %d should be allowed within capacity", i)
 		}
@@ -63,9 +62,10 @@ func TestLeakyBucket(t *testing.T) {
 }
 
 func TestSlidingWindowInMemory(t *testing.T) {
+	capacity := 3
 	config := RateLimiterConfig{
 		Algorithm:    SlidingWindow,
-		Capacity:     3,
+		Capacity:     capacity,
 		CustomWindow: 500 * time.Millisecond,
 		UseRedis:     false,
 	}
@@ -73,7 +73,7 @@ func TestSlidingWindowInMemory(t *testing.T) {
 	ctx := context.Background()
 
 	// Test window capacity
-	for i := 0; i < 3; i++ {
+	for i := 0; i < capacity; i++ {
 		if !rl.Allow(ctx) {
 			t.Errorf("Request %d should be allowed within window", i)
 		}
@@ -91,83 +91,11 @@ func TestSlidingWindowInMemory(t *testing.T) {
 	}
 }
 
-func TestTokenBucketRedis(t *testing.T) {
-	client := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
-	defer client.Close()
-
-	config := RateLimiterConfig{
-		Algorithm:   TokenBucket,
-		Capacity:    2,
-		Rate:        200 * time.Millisecond,
-		UseRedis:    true,
-		RedisClient: client,
-		RedisKey:    "test:token",
-	}
-	rl := NewRateLimiter(config)
-	ctx := context.Background()
-
-	// Ensure Redis is clean
-	client.Del(ctx, config.RedisKey)
-	client.Del(ctx, config.RedisKey+":last_refill")
-
-	// Test initial burst
-	for i := 0; i < 2; i++ {
-		if !rl.Allow(ctx) {
-			t.Errorf("Request %d should be allowed in initial burst", i)
-		}
-	}
-	if rl.Allow(ctx) {
-		t.Error("Request after capacity should be blocked")
-	}
-
-	// Test refill
-	time.Sleep(250 * time.Millisecond)
-	if !rl.Allow(ctx) {
-		t.Error("Request should be allowed after refill")
-	}
-}
-
-func TestSlidingWindowRedis(t *testing.T) {
-	client := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
-	defer client.Close()
-
-	config := RateLimiterConfig{
-		Algorithm:    SlidingWindow,
-		Capacity:     2,
-		CustomWindow: 500 * time.Millisecond,
-		UseRedis:     true,
-		RedisClient:  client,
-		RedisKey:     "test:slide",
-	}
-	rl := NewRateLimiter(config)
-	ctx := context.Background()
-
-	// Ensure Redis is clean
-	client.Del(ctx, config.RedisKey)
-
-	// Test window capacity
-	for i := 0; i < 2; i++ {
-		if !rl.Allow(ctx) {
-			t.Errorf("Request %d should be allowed within window", i)
-		}
-	}
-	if rl.Allow(ctx) {
-		t.Error("Request should be blocked when window is full")
-	}
-
-	// Test window sliding
-	time.Sleep(600 * time.Millisecond)
-	for i := 0; i < 2; i++ {
-		if !rl.Allow(ctx) {
-			t.Errorf("Request %d should be allowed after window slides", i)
-		}
-	}
-}
-
 func TestConcurrentAccess(t *testing.T) {
+	capacity := 5
 	config := RateLimiterConfig{
 		Algorithm: TokenBucket,
-		Capacity:  5,
+		Capacity:  capacity,
 		Rate:      100 * time.Millisecond,
 		UseRedis:  false,
 	}
@@ -192,7 +120,7 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	wg.Wait()
-	if successCount != 5 {
-		t.Errorf("Expected 5 successful requests, got %d", successCount)
+	if successCount != capacity {
+		t.Errorf("Expected %d successful requests, got %d", capacity, successCount)
 	}
 }

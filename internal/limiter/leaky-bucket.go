@@ -10,6 +10,7 @@ func (rl *RateLimiter) allowLeakyBucket(ctx context.Context) bool {
 	case rl.queue <- struct{}{}:
 		go func() {
 			time.Sleep(rl.config.Rate)
+			<-rl.queue
 		}()
 		return true
 	case <-ctx.Done():
