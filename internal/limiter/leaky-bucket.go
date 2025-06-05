@@ -16,6 +16,9 @@ func (rl *RateLimiter) allowLeakyBucket(ctx context.Context) bool {
 	case <-ctx.Done():
 		return false
 	default:
+		if rl.config.Logger != nil {
+			rl.config.Logger.Printf("rate limit exceeded")
+		}
 		return false
 	}
 }

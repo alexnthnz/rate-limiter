@@ -19,6 +19,10 @@ func (rl *RateLimiter) allowTokenBucket(ctx context.Context) bool {
 		return true
 	}
 
+	if rl.config.Logger != nil {
+		rl.config.Logger.Printf("rate limit exceeded")
+	}
+
 	return false
 }
 
