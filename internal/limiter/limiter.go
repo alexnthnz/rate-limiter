@@ -14,6 +14,10 @@ const (
 	SlidingWindow AlgorithmType = "sliding_window"
 )
 
+type Logger interface {
+	Printf(format string, v ...interface{})
+}
+
 type RateLimiterConfig struct {
 	Algorithm    AlgorithmType
 	Capacity     int
@@ -22,6 +26,7 @@ type RateLimiterConfig struct {
 	RedisClient  interface{}
 	RedisKey     string
 	CustomWindow time.Duration
+	Logger       Logger
 }
 
 type RateLimiter struct {
@@ -61,6 +66,52 @@ func (rl *RateLimiter) Allow(ctx context.Context) bool {
 		return rl.allowSlidingWindow(ctx)
 	default:
 		return true
+	}
+}
+
+func (rl *RateLimiter) Config() RateLimiterConfig {
+	return rl.config
+}
+
+func (rl *RateLimiter) Remaining() int {
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
+
+	switch rl.config.Algorithm {
+	case TokenBucket:
+		rl.refill()
+		return rl.tokens
+	case LeakyBucket:
+		return rl.config.Capacity - len(rl.queue)
+	case SlidingWindow:
+		now := time.Now().UnixNano()
+		window := rl.config.CustomWindow.Nanoseconds()
+		cutoff := now - window
+		count := 0
+		for _, ts := range rl.requests {
+			if ts >= cutoff {
+				count++
+			}
+		}
+		return rl.config.Capacity - count
+	default:
+		return 0
+	}
+}
+
+func (rl *RateLimiter) ResetTime() time.Time {
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
+
+	switch rl.config.Algorithm {
+	case SlidingWindow:
+		if len(rl.requests) == 0 {
+			return time.Now().Add(rl.config.CustomWindow)
+		}
+		oldest := rl.requests[0]
+		return time.Unix(0, oldest).Add(rl.config.CustomWindow)
+	default:
+		return rl.lastRefill.Add(rl.config.Rate)
 	}
 }
 

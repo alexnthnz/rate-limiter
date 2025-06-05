@@ -34,5 +34,8 @@ func (rl *RateLimiter) inMemorySlidingWindow() bool {
 		return true
 	}
 
+	if rl.config.Logger != nil {
+		rl.config.Logger.Printf("rate limit exceeded")
+	}
 	return false
 }
