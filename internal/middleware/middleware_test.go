@@ -10,11 +10,14 @@ import (
 )
 
 func TestMiddlewareHeaders(t *testing.T) {
-	rl := limiter.NewRateLimiter(limiter.RateLimiterConfig{
+	rl, err := limiter.NewRateLimiter(limiter.RateLimiterConfig{
 		Algorithm: limiter.TokenBucket,
 		Capacity:  1,
 		Rate:      time.Second,
 	})
+	if err != nil {
+		t.Fatalf("Failed to create rate limiter: %v", err)
+	}
 
 	mw := NewRateLimiterMiddleware(rl)
 
@@ -38,11 +41,14 @@ func TestMiddlewareHeaders(t *testing.T) {
 }
 
 func TestCustomLimitHandler(t *testing.T) {
-	rl := limiter.NewRateLimiter(limiter.RateLimiterConfig{
+	rl, err := limiter.NewRateLimiter(limiter.RateLimiterConfig{
 		Algorithm: limiter.TokenBucket,
 		Capacity:  1,
 		Rate:      time.Hour,
 	})
+	if err != nil {
+		t.Fatalf("Failed to create rate limiter: %v", err)
+	}
 
 	called := false
 	mw := NewRateLimiterMiddleware(rl, WithLimitHandler(func(w http.ResponseWriter, r *http.Request) {
@@ -66,5 +72,43 @@ func TestCustomLimitHandler(t *testing.T) {
 	}
 	if resp2.Code != http.StatusTeapot {
 		t.Errorf("unexpected status: %d", resp2.Code)
+	}
+}
+
+func TestNewRateLimiterMiddlewareWithConfig(t *testing.T) {
+	config := limiter.RateLimiterConfig{
+		Algorithm: limiter.TokenBucket,
+		Capacity:  1,
+		Rate:      time.Second,
+	}
+
+	mw, err := NewRateLimiterMiddlewareWithConfig(config)
+	if err != nil {
+		t.Fatalf("Failed to create middleware: %v", err)
+	}
+
+	handler := mw.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.Code)
+	}
+}
+
+func TestNewRateLimiterMiddlewareWithInvalidConfig(t *testing.T) {
+	config := limiter.RateLimiterConfig{
+		Algorithm: limiter.TokenBucket,
+		Capacity:  0, // Invalid
+		Rate:      time.Second,
+	}
+
+	_, err := NewRateLimiterMiddlewareWithConfig(config)
+	if err == nil {
+		t.Error("expected error for invalid config")
 	}
 }

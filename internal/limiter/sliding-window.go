@@ -18,22 +18,30 @@ func (rl *RateLimiter) inMemorySlidingWindow() bool {
 
 	now := time.Now().UnixNano()
 	window := rl.config.CustomWindow.Nanoseconds()
-
 	cutoff := now - window
-	newRequests := rl.requests[:0]
+
+	// Filter out expired requests and rebuild slice to prevent memory growth
+	validRequests := make([]int64, 0, rl.config.Capacity)
 	for _, ts := range rl.requests {
 		if ts >= cutoff {
-			newRequests = append(newRequests, ts)
+			validRequests = append(validRequests, ts)
 		}
 	}
 
-	rl.requests = newRequests
+	// Replace the old slice with the new one to free memory
+	rl.requests = validRequests
 
 	if len(rl.requests) < rl.config.Capacity {
 		rl.requests = append(rl.requests, now)
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementAllowed()
+		}
 		return true
 	}
 
+	if rl.config.MetricsCollector != nil {
+		rl.config.MetricsCollector.IncrementDenied()
+	}
 	if rl.config.Logger != nil {
 		rl.config.Logger.Printf("rate limit exceeded")
 	}

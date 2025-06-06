@@ -8,7 +8,17 @@ import (
 )
 
 func (rl *RateLimiter) redisTokenBucket(ctx context.Context) bool {
-	client := rl.config.RedisClient.(*redis.Client)
+	client, ok := rl.config.RedisClient.(*redis.Client)
+	if !ok {
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementRedisError()
+		}
+		if rl.config.Logger != nil {
+			rl.config.Logger.Printf("invalid redis client type")
+		}
+		return false
+	}
+	
 	key := rl.config.RedisKey
 	now := time.Now().UnixNano()
 
@@ -59,11 +69,45 @@ func (rl *RateLimiter) redisTokenBucket(ctx context.Context) bool {
 		rl.config.Rate.Nanoseconds(),  // ARGV[4]: rate per token
 	).Int()
 
-	return err == nil && result == 1
+	if err != nil {
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementRedisError()
+		}
+		if rl.config.Logger != nil {
+			rl.config.Logger.Printf("redis token bucket error: %v", err)
+		}
+		// Fall back to allowing the request on Redis errors
+		return true
+	}
+
+	if result == 1 {
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementAllowed()
+		}
+	} else {
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementDenied()
+		}
+		if rl.config.Logger != nil {
+			rl.config.Logger.Printf("rate limit exceeded")
+		}
+	}
+
+	return result == 1
 }
 
 func (rl *RateLimiter) redisSlidingWindow(ctx context.Context) bool {
-	client := rl.config.RedisClient.(*redis.Client)
+	client, ok := rl.config.RedisClient.(*redis.Client)
+	if !ok {
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementRedisError()
+		}
+		if rl.config.Logger != nil {
+			rl.config.Logger.Printf("invalid redis client type")
+		}
+		return false
+	}
+	
 	key := rl.config.RedisKey
 	now := time.Now().UnixNano()
 	window := rl.config.CustomWindow.Nanoseconds()
@@ -81,5 +125,30 @@ func (rl *RateLimiter) redisSlidingWindow(ctx context.Context) bool {
 
 	result, err := client.Eval(ctx, script, []string{key}, now-window, rl.config.Capacity, now, rl.config.CustomWindow.Milliseconds()).
 		Int()
-	return err == nil && result == 1
+	
+	if err != nil {
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementRedisError()
+		}
+		if rl.config.Logger != nil {
+			rl.config.Logger.Printf("redis sliding window error: %v", err)
+		}
+		// Fall back to allowing the request on Redis errors
+		return true
+	}
+
+	if result == 1 {
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementAllowed()
+		}
+	} else {
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementDenied()
+		}
+		if rl.config.Logger != nil {
+			rl.config.Logger.Printf("rate limit exceeded")
+		}
+	}
+
+	return result == 1
 }

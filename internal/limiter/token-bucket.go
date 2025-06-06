@@ -16,9 +16,15 @@ func (rl *RateLimiter) allowTokenBucket(ctx context.Context) bool {
 	rl.refill()
 	if rl.tokens > 0 {
 		rl.tokens--
+		if rl.config.MetricsCollector != nil {
+			rl.config.MetricsCollector.IncrementAllowed()
+		}
 		return true
 	}
 
+	if rl.config.MetricsCollector != nil {
+		rl.config.MetricsCollector.IncrementDenied()
+	}
 	if rl.config.Logger != nil {
 		rl.config.Logger.Printf("rate limit exceeded")
 	}
