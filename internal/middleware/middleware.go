@@ -30,6 +30,15 @@ func NewRateLimiterMiddleware(l *limiter.RateLimiter, opts ...Option) *RateLimit
 	return m
 }
 
+// NewRateLimiterMiddlewareWithConfig creates middleware directly from config for convenience.
+func NewRateLimiterMiddlewareWithConfig(config limiter.RateLimiterConfig, opts ...Option) (*RateLimiterMiddleware, error) {
+	l, err := limiter.NewRateLimiter(config)
+	if err != nil {
+		return nil, err
+	}
+	return NewRateLimiterMiddleware(l, opts...), nil
+}
+
 // Handler returns the HTTP handler that enforces rate limiting.
 func (m *RateLimiterMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
